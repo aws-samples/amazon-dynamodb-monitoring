@@ -1,0 +1,53 @@
+version: '2'
+services:
+  run_shell_dynamodb_metrics_lambda:
+    build:
+      context: .
+    image: run-shell-dynamodb-metrics-lambda
+    container_name: run_shell_dynamodb_metrics_lambda
+    command: /tmp/src/dynamodb_metrics_lambda/run_shell.sh
+    environment:
+      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
+      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
+      - AWS_DEFAULT_REGION=${AWS_DEFAULT_REGION}
+  deploy_dynamodb_metrics_lambda:
+    build:
+      context: .
+    image: deploy-dynamodb-metrics-lambda
+    container_name: deploy_dynamodb_metrics_lambda
+    command: /tmp/src/dynamodb_metrics_lambda/deploy.sh
+    environment:
+      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
+      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
+      - AWS_DEFAULT_REGION=${AWS_DEFAULT_REGION}
+  undeploy_dynamodb_metrics_lambda:
+    build:
+      context: .
+    image: undeploy-dynamodb-metrics-lambda
+    container_name: undeploy_dynamodb_metrics_lambda
+    command: /tmp/src/dynamodb_metrics_lambda/undeploy.sh
+    environment:
+      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
+      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
+      - AWS_DEFAULT_REGION=${AWS_DEFAULT_REGION}
+  deploy_dynamodb_alarms_cf:
+    build:
+      context: .
+    image: deploy-dynamodb-alarms-cf
+    container_name: deploy_dynamodb_alarms_cf
+    command: /tmp/src/dynamodb_alarms_cf/deploy.sh
+    environment:
+      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
+      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
+      - AWS_DEFAULT_REGION=${AWS_DEFAULT_REGION}
+      - DYNAMODB_SNS_EMAIL=${DYNAMODB_SNS_EMAIL}
+  undeploy_dynamodb_alarms_cf:
+    build:
+      context: .
+    image: undeploy-dynamodb-alarms-cf
+    container_name: undeploy_dynamodb_alarms_cf
+    command: /tmp/src/dynamodb_alarms_cf/undeploy.sh
+    environment:
+      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
+      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
+      - AWS_DEFAULT_REGION=${AWS_DEFAULT_REGION}

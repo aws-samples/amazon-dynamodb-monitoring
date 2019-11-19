@@ -1,0 +1,84 @@
+service: dynamodb-monitoring-test
+
+frameworkVersion: ">=1.1.0 <2.0.0"
+
+provider:
+  name: aws
+  region: ${opt:region}
+  runtime: python3.7
+  timeout: 60 # 1 minute
+  iamRoleStatements:
+    - Effect: Allow
+      Action:
+        - dynamodb:DescribeLimits
+        - dynamodb:DescribeTable
+        - dynamodb:ListTables
+        - autoscaling:Describe*
+        - application-autoscaling:Describe*
+        - cloudwatch:GetMetricData
+        - cloudwatch:PutMetricData
+      Resource: "*"
+
+resources:
+  Resources:
+    MonitoringDynamoDbTable:
+      Type: 'AWS::DynamoDB::Table'
+      #DeletionPolicy: Retain
+      Properties:
+        AttributeDefinitions:
+          -
+            AttributeName: id
+            AttributeType: S
+        KeySchema:
+          -
+            AttributeName: id
+            KeyType: HASH
+        BillingMode: PROVISIONED
+        ProvisionedThroughput:
+          ReadCapacityUnits: 5
+          WriteCapacityUnits: 5
+        TableName: dynamodb-monitoring-test
+        StreamSpecification:
+          StreamViewType: NEW_AND_OLD_IMAGES
+    MonitoringDynamoDbTableUEAlarm:
+      Type: 'AWS::CloudWatch::Alarm'
+      Properties:
+        AlarmName: !Join ['', [!Ref MonitoringDynamoDbTable, '-ue-alarm']]
+        AlarmDescription: 'Alarm when DynamoDB user errors occur'
+        Namespace: 'AWS/DynamoDB'
+        MetricName: 'UserErrors'
+        Dimensions:
+          - 
+            Name: 'TableName'
+            Value: !Ref MonitoringDynamoDbTable
+        Statistic: 'Sum'
+        Threshold: 0
+        ComparisonOperator: 'GreaterThanThreshold'
+        Period: 60
+        Unit: 'Count'
+        EvaluationPeriods: 1
+    MonitoringDynamoDbTableSEAlarm:
+      Type: 'AWS::CloudWatch::Alarm'
+      Properties:
+        AlarmName: !Join ['', [!Ref MonitoringDynamoDbTable, '-se-alarm']]
+        AlarmDescription: 'Alarm when DynamoDB system errors occur'
+        Namespace: 'AWS/DynamoDB'
+        MetricName: 'SystemErrors'
+        Dimensions:
+          - 
+            Name: 'TableName'
+            Value: !Ref MonitoringDynamoDbTable
+        Statistic: 'Sum'
+        Threshold: 0
+        ComparisonOperator: 'GreaterThanThreshold'
+        Period: 60
+        Unit: 'Count'
+        EvaluationPeriods: 1
+
+functions:
+  dynamodb-cloudwatch-publish-metrics:
+    handler: dynamodb_cloudwatch.publish_dynamodb_metrics
+    environment:
+      TARGET_DDB_TABLE: !Ref MonitoringDynamoDbTable
+    events:
+      - schedule: rate(1 minute)

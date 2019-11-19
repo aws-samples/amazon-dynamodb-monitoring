@@ -1,0 +1,895 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: Sample template for monitoring DynamoDB
+Parameters: 
+  DynamoDBProvisionedTableName: 
+    Description: Name of DynamoDB Provisioned Table to create
+    Type: String
+    MinLength: 3
+    MaxLength: 255
+    ConstraintDescription : https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/Limits.html#limits-naming-rules
+  DynamoDBOnDemandTableName: 
+    Description: Name of DynamoDB On-Demand Table to create
+    Type: String
+    MinLength: 3
+    MaxLength: 255
+    ConstraintDescription : https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/Limits.html#limits-naming-rules
+  DynamoDBGlobalTableName: 
+    Description: Name of pre-existing DynamoDB Global Table
+    Type: String
+    MinLength: 3
+    MaxLength: 255
+    ConstraintDescription : https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/Limits.html#limits-naming-rules
+  DynamoDBGlobalTableReceivingRegion: 
+    Description: Replica Region for Global Table referred to by DynamoDBGlobalTableName
+    Type: String
+    MinLength: 3
+    MaxLength: 255
+    ConstraintDescription : https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/Concepts.RegionsAndAvailabilityZones.html
+  DynamoDBStreamLambdaFunctionName: 
+    Description: DynamoDB Stream Lambda Function Name
+    Type: String
+    MinLength: 1
+    MaxLength: 140
+    ConstraintDescription : https://docs.aws.amazon.com/lambda/latest/dg/API_CreateFunction.html
+  DynamoDBCustomNamespace: 
+    Description : Custom namespace used by DynamoDB Monitoring Lambda
+    Type: String
+    MinLength: 1
+    MaxLength: 255
+    ConstraintDescription : https://docs.aws.amazon.com/AmazonCloudWatch/latest/monitoring/cloudwatch_concepts.html
+  DynamoDBSNSEmail:
+    Description : Email Address subscribed to newly created SNS Topic
+    Type: String
+    AllowedPattern: "^[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\\.[a-zA-Z0-9-.]+$"
+    MinLength: 1
+    MaxLength: 255
+
+Resources:
+
+  DynamoDBMonitoringSNSTopic:
+    Type: AWS::SNS::Topic
+    Properties: 
+      DisplayName: DynamoDB Monitoring SNS Topic
+      Subscription: 
+        - Endpoint: !Ref DynamoDBSNSEmail
+          Protocol: email
+      TopicName: dynamodb-monitoring
+  DynamoDBScalingRole: 
+    Type: "AWS::IAM::Role"
+    Properties: 
+     AssumeRolePolicyDocument: 
+      Version: "2012-10-17"
+      Statement: 
+       - 
+        Effect: Allow
+        Principal: 
+         Service: 
+          - 
+           "application-autoscaling.amazonaws.com"
+        Action: 
+         - 
+          "sts:AssumeRole"
+     Path: "/"
+     Policies: 
+      - 
+       PolicyName: root
+       PolicyDocument: 
+        Version: "2012-10-17"
+        Statement: 
+         - 
+          Effect: Allow
+          Action:          
+           - "dynamodb:DescribeTable"
+           - "dynamodb:UpdateTable"
+           - "cloudwatch:PutMetricAlarm"
+           - "cloudwatch:DescribeAlarms"
+           - "cloudwatch:GetMetricStatistics"
+           - "cloudwatch:SetAlarmState"
+           - "cloudwatch:DeleteAlarms"
+          Resource: "*"
+
+  DynamoDBProvisionedTable:
+    Type: "AWS::DynamoDB::Table"
+    Properties: 
+      TableName: !Ref DynamoDBProvisionedTableName
+      AttributeDefinitions: 
+        - 
+          AttributeName: userId
+          AttributeType: S
+        - 
+          AttributeName: city
+          AttributeType: S
+        - 
+          AttributeName: signupDate
+          AttributeType: S
+      KeySchema: 
+        - 
+          AttributeName: userId
+          KeyType: HASH
+      ProvisionedThroughput: 
+        ReadCapacityUnits: 5
+        WriteCapacityUnits: 5
+      GlobalSecondaryIndexes: 
+        - IndexName: !Join [ '-', [!Ref DynamoDBProvisionedTableName, 'gsi1'] ]
+          KeySchema: 
+            - AttributeName: city
+              KeyType: HASH
+            - AttributeName: signupDate
+              KeyType: RANGE
+          Projection: 
+            ProjectionType: ALL
+          ProvisionedThroughput: 
+            ReadCapacityUnits: 5
+            WriteCapacityUnits: 5
+  ProvisionedTableReadCapacityScalableTarget: 
+    Type: "AWS::ApplicationAutoScaling::ScalableTarget"
+    Properties: 
+      MaxCapacity: 50
+      MinCapacity: 10
+      ResourceId: !Sub table/${DynamoDBProvisionedTableName}
+      RoleARN: !GetAtt DynamoDBScalingRole.Arn
+      ScalableDimension: "dynamodb:table:ReadCapacityUnits"
+      ServiceNamespace: dynamodb
+  ProvisionedTableReadScalingPolicy: 
+   Type: "AWS::ApplicationAutoScaling::ScalingPolicy"
+   Properties: 
+    PolicyName: ReadAutoScalingPolicy
+    PolicyType: TargetTrackingScaling
+    ScalingTargetId: !Ref ProvisionedTableReadCapacityScalableTarget
+    TargetTrackingScalingPolicyConfiguration: 
+     TargetValue: 70
+     ScaleInCooldown: 60
+     ScaleOutCooldown: 60
+     PredefinedMetricSpecification: 
+      PredefinedMetricType: DynamoDBReadCapacityUtilization
+  ProvisionedTableWriteCapacityScalableTarget: 
+    Type: "AWS::ApplicationAutoScaling::ScalableTarget"
+    Properties: 
+      MaxCapacity: 100
+      MinCapacity: 5   
+      ResourceId: !Sub table/${DynamoDBProvisionedTableName}
+      RoleARN: !GetAtt DynamoDBScalingRole.Arn
+      ScalableDimension: "dynamodb:table:WriteCapacityUnits"
+      ServiceNamespace: dynamodb
+  ProvisionedTableWriteScalingPolicy: 
+   Type: "AWS::ApplicationAutoScaling::ScalingPolicy"
+   Properties: 
+    PolicyName: WriteAutoScalingPolicy
+    PolicyType: TargetTrackingScaling
+    ScalingTargetId: !Ref ProvisionedTableWriteCapacityScalableTarget
+    TargetTrackingScalingPolicyConfiguration: 
+     TargetValue: 70
+     ScaleInCooldown: 60
+     ScaleOutCooldown: 60
+     PredefinedMetricSpecification: 
+      PredefinedMetricType: DynamoDBWriteCapacityUtilization
+
+  DynamoDBOnDemandTable:
+    Type: "AWS::DynamoDB::Table"
+    Properties: 
+      TableName: !Ref DynamoDBOnDemandTableName
+      AttributeDefinitions: 
+        - 
+          AttributeName: userId
+          AttributeType: S
+        - 
+          AttributeName: city
+          AttributeType: S
+        - 
+          AttributeName: signupDate
+          AttributeType: S
+      KeySchema: 
+        - 
+          AttributeName: userId
+          KeyType: HASH
+      BillingMode: PAY_PER_REQUEST
+      GlobalSecondaryIndexes: 
+        - IndexName: !Join [ '-', [!Ref DynamoDBOnDemandTableName, 'gsi1'] ]
+          KeySchema: 
+            - AttributeName: city
+              KeyType: HASH
+            - AttributeName: signupDate
+              KeyType: RANGE
+          Projection: 
+            ProjectionType: ALL
+
+  DynamoDBAccountReadCapAlarm:
+    Type: 'AWS::CloudWatch::Alarm'
+    Properties:
+      AlarmName: 'DynamoDBAccountReadCapAlarm'
+      AlarmDescription: 'Alarm when account approaches maximum read capacity limit'
+      AlarmActions:
+        - !Ref DynamoDBMonitoringSNSTopic
+      Namespace: 'AWS/DynamoDB'
+      MetricName: 'AccountProvisionedReadCapacityUtilization'
+      Statistic: 'Maximum'
+      Unit: 'Percent'
+      Threshold: 80
+      ComparisonOperator: 'GreaterThanThreshold'
+      Period: 300
+      EvaluationPeriods: 1
+  DynamoDBAccountWriteCapAlarm:
+    Type: 'AWS::CloudWatch::Alarm'
+    Properties:
+      AlarmName: 'DynamoDBAccountWriteCapAlarm'
+      AlarmDescription: 'Alarm when account approaches maximum write capacity limit'
+      AlarmActions:
+        - !Ref DynamoDBMonitoringSNSTopic
+      Namespace: 'AWS/DynamoDB'
+      MetricName: 'AccountProvisionedWriteCapacityUtilization'
+      Statistic: 'Maximum'
+      Unit: 'Percent'
+      Threshold: 80
+      ComparisonOperator: 'GreaterThanThreshold'
+      Period: 300
+      EvaluationPeriods: 1
+  DynamoDBTableReadCapAlarm:
+    Type: 'AWS::CloudWatch::Alarm'
+    Properties:
+      AlarmName: 'DynamoDBTableReadCapAlarm'
+      AlarmDescription: 'Alarm when table capacity approaches maximum account read capacity limit'
+      AlarmActions:
+        - !Ref DynamoDBMonitoringSNSTopic
+      Namespace: 'AWS/DynamoDB'
+      MetricName: 'MaxProvisionedTableReadCapacityUtilization'
+      Statistic: 'Maximum'
+      Unit: 'Percent'
+      Threshold: 80
+      ComparisonOperator: 'GreaterThanThreshold'
+      Period: 300
+      EvaluationPeriods: 1
+  DynamoDBTableWriteCapAlarm:
+    Type: 'AWS::CloudWatch::Alarm'
+    Properties:
+      AlarmName: 'DynamoDBTableWriteCapAlarm'
+      AlarmDescription: 'Alarm when table capacity approaches maximum account write capacity limit'
+      AlarmActions:
+        - !Ref DynamoDBMonitoringSNSTopic
+      Namespace: 'AWS/DynamoDB'
+      MetricName: 'MaxProvisionedTableWriteCapacityUtilization'
+      Statistic: 'Maximum'
+      Unit: 'Percent'
+      Threshold: 80
+      ComparisonOperator: 'GreaterThanThreshold'
+      Period: 300
+      EvaluationPeriods: 1
+  DynamoDBAccountTableLimitAlarm:
+    Type: 'AWS::CloudWatch::Alarm'
+    Properties:
+      AlarmName: 'DynamoDBAccountTableLimitAlarm'
+      AlarmDescription: 'Alarm when account approaches total limit of number of DynamoDB Tables'
+      AlarmActions:
+        - !Ref DynamoDBMonitoringSNSTopic
+      Namespace: !Ref DynamoDBCustomNamespace
+      MetricName: 'AccountTableLimitPct'
+      Statistic: 'Maximum'
+      Unit: 'Percent'
+      Threshold: 80
+      ComparisonOperator: 'GreaterThanThreshold'
+      Period: 60
+      EvaluationPeriods: 2
+  DynamoDBTableReadThrottlingAlarm:
+    Type: 'AWS::CloudWatch::Alarm'
+    Properties:
+      AlarmName: 'DynamoDBTableReadThrottlingAlarm'
+      AlarmDescription: 'Alarm when table read throttle requests exceed 2% of total number of read requests'
+      AlarmActions:
+        - !Ref DynamoDBMonitoringSNSTopic
+      Metrics:
+        - Id: 'e1'
+          Expression: '(m1/m2)*100'
+          Label: TableReadThrottlesOverTotalReads
+        - Id: 'm1'
+          MetricStat:
+            Metric:
+              Namespace: 'AWS/DynamoDB'
+              MetricName: 'ReadThrottleEvents'
+              Dimensions:
+                - Name: 'TableName'
+                  Value: !Ref DynamoDBProvisionedTableName
+            Period: 60 
+            Stat: 'SampleCount'
+            Unit: 'Count'
+          ReturnData: False
+        - Id: 'm2'
+          MetricStat:
+            Metric:
+              Namespace: 'AWS/DynamoDB'
+              MetricName: 'ConsumedReadCapacityUnits'
+              Dimensions:
+                - Name: 'TableName'
+                  Value: !Ref DynamoDBProvisionedTableName
+            Period: 60 
+            Stat: 'SampleCount'
+            Unit: 'Count'
+          ReturnData: False
+      EvaluationPeriods: 2
+      Threshold: 2.0
+      ComparisonOperator: 'GreaterThanThreshold'
+  DynamoDBGSIReadThrottlingAlarm:
+    Type: 'AWS::CloudWatch::Alarm'
+    Properties:
+      AlarmName: 'DynamoDBGSIReadThrottlingAlarm'
+      AlarmDescription: 'Alarm when GSI read throttle requests exceed 2% of total number of read requests'
+      AlarmActions:
+        - !Ref DynamoDBMonitoringSNSTopic
+      Metrics:
+        - Id: 'e1'
+          Expression: '(m1/m2)*100'
+          Label: GSIReadThrottlesOverTotalReads
+        - Id: 'm1'
+          MetricStat:
+            Metric:
+              Namespace: 'AWS/DynamoDB'
+              MetricName: 'ReadThrottleEvents'
+              Dimensions:
+                - Name: 'TableName'
+                  Value: !Ref DynamoDBProvisionedTableName
+                - Name: 'GlobalSecondaryIndexName'
+                  Value: !Join [ '-', [!Ref DynamoDBProvisionedTableName, 'gsi1'] ]
+            Period: 60 
+            Stat: 'SampleCount'
+            Unit: 'Count'
+          ReturnData: False
+        - Id: 'm2'
+          MetricStat:
+            Metric:
+              Namespace: 'AWS/DynamoDB'
+              MetricName: 'ConsumedReadCapacityUnits'
+              Dimensions:
+                - Name: 'TableName'
+                  Value: !Ref DynamoDBProvisionedTableName
+                - Name: 'GlobalSecondaryIndexName'
+                  Value: !Join [ '-', [!Ref DynamoDBProvisionedTableName, 'gsi1'] ]
+            Period: 60 
+            Stat: 'SampleCount'
+            Unit: 'Count'
+          ReturnData: False
+      EvaluationPeriods: 2
+      Threshold: 2.0
+      ComparisonOperator: 'GreaterThanThreshold'
+  DynamoDBTableWriteThrottlingAlarm:
+    Type: 'AWS::CloudWatch::Alarm'
+    Properties:
+      AlarmName: 'DynamoDBTableWriteThrottlingAlarm'
+      AlarmDescription: 'Alarm when table write throttle requests exceed 2% of total number of write requests'
+      AlarmActions:
+        - !Ref DynamoDBMonitoringSNSTopic
+      Metrics:
+        - Id: 'e1'
+          Expression: '(m1/m2)*100'
+          Label: TableWriteThrottlesOverTotalWrites
+        - Id: 'm1'
+          MetricStat:
+            Metric:
+              Namespace: 'AWS/DynamoDB'
+              MetricName: 'WriteThrottleEvents'
+              Dimensions:
+                - Name: 'TableName'
+                  Value: !Ref DynamoDBProvisionedTableName
+            Period: 60 
+            Stat: 'SampleCount'
+            Unit: 'Count'
+          ReturnData: False
+        - Id: 'm2'
+          MetricStat:
+            Metric:
+              Namespace: 'AWS/DynamoDB'
+              MetricName: 'ConsumedWriteCapacityUnits'
+              Dimensions:
+                - Name: 'TableName'
+                  Value: !Ref DynamoDBProvisionedTableName
+            Period: 60 
+            Stat: 'SampleCount'
+            Unit: 'Count'
+          ReturnData: False
+      EvaluationPeriods: 2
+      Threshold: 2.0
+      ComparisonOperator: 'GreaterThanThreshold'
+  DynamoDBGSIWriteThrottlingAlarm:
+    Type: 'AWS::CloudWatch::Alarm'
+    Properties:
+      AlarmName: 'DynamoDBGSIWriteThrottlingAlarm'
+      AlarmDescription: 'Alarm when GSI write throttle requests exceed 2% of total number of write requests'
+      AlarmActions:
+        - !Ref DynamoDBMonitoringSNSTopic
+      Metrics:
+        - Id: 'e1'
+          Expression: '(m1/m2)*100'
+          Label: GSIWriteThrottlesOverTotalWrites
+        - Id: 'm1'
+          MetricStat:
+            Metric:
+              Namespace: 'AWS/DynamoDB'
+              MetricName: 'WriteThrottleEvents'
+              Dimensions:
+                - Name: 'TableName'
+                  Value: !Ref DynamoDBProvisionedTableName
+                - Name: 'GlobalSecondaryIndexName'
+                  Value: !Join [ '-', [!Ref DynamoDBProvisionedTableName, 'gsi1'] ]
+            Period: 60 
+            Stat: 'SampleCount'
+            Unit: 'Count'
+          ReturnData: False
+        - Id: 'm2'
+          MetricStat:
+            Metric:
+              Namespace: 'AWS/DynamoDB'
+              MetricName: 'ConsumedWriteCapacityUnits'
+              Dimensions:
+                - Name: 'TableName'
+                  Value: !Ref DynamoDBProvisionedTableName
+                - Name: 'GlobalSecondaryIndexName'
+                  Value: !Join [ '-', [!Ref DynamoDBProvisionedTableName, 'gsi1'] ]
+            Period: 60 
+            Stat: 'SampleCount'
+            Unit: 'Count'
+          ReturnData: False
+      EvaluationPeriods: 2
+      Threshold: 2.0
+      ComparisonOperator: 'GreaterThanThreshold'
+  DynamoDBTableSystemErrorAlarm:
+    Type: 'AWS::CloudWatch::Alarm'
+    Properties:
+      AlarmName: 'DynamoDBTableSystemErrorAlarm'
+      AlarmDescription: 'Alarm when system errors exceed 2% of total number of requests'
+      AlarmActions:
+        - !Ref DynamoDBMonitoringSNSTopic
+      Metrics:
+        - Id: 'e1'
+          Expression: 'm1/(m2+m3)'
+          Label: SystemErrorsOverTotalRequests
+        - Id: 'm1'
+          MetricStat:
+            Metric:
+              Namespace: 'AWS/DynamoDB'
+              MetricName: 'SystemErrors'
+              Dimensions:
+                - Name: 'TableName'
+                  Value: !Ref DynamoDBProvisionedTableName
+            Period: 60 
+            Stat: 'SampleCount'
+            Unit: 'Count'
+          ReturnData: False
+        - Id: 'm2'
+          MetricStat:
+            Metric:
+              Namespace: 'AWS/DynamoDB'
+              MetricName: 'ConsumedReadCapacityUnits'
+              Dimensions:
+                - Name: 'TableName'
+                  Value: !Ref DynamoDBProvisionedTableName
+            Period: 60 
+            Stat: 'SampleCount'
+            Unit: 'Count'
+          ReturnData: False
+        - Id: 'm3'
+          MetricStat:
+            Metric:
+              Namespace: 'AWS/DynamoDB'
+              MetricName: 'ConsumedWriteCapacityUnits'
+              Dimensions:
+                - Name: 'TableName'
+                  Value: !Ref DynamoDBProvisionedTableName
+            Period: 60 
+            Stat: 'SampleCount'
+            Unit: 'Count'
+          ReturnData: False
+      EvaluationPeriods: 20
+      Threshold: 2.0
+      ComparisonOperator: 'GreaterThanThreshold'
+  DynamoDBGSISystemErrorAlarm:
+    Type: 'AWS::CloudWatch::Alarm'
+    Properties:
+      AlarmName: 'DynamoDBGSISystemErrorAlarm'
+      AlarmDescription: 'Alarm when GSI system errors exceed 2% of total number of requests'
+      AlarmActions:
+        - !Ref DynamoDBMonitoringSNSTopic
+      Metrics:
+        - Id: 'e1'
+          Expression: 'm1/(m2+m3)'
+          Label: GSISystemErrorsOverTotalRequests
+        - Id: 'm1'
+          MetricStat:
+            Metric:
+              Namespace: 'AWS/DynamoDB'
+              MetricName: 'SystemErrors'
+              Dimensions:
+                - Name: 'TableName'
+                  Value: !Ref DynamoDBProvisionedTableName
+                - Name: 'GlobalSecondaryIndexName'
+                  Value: !Join [ '-', [!Ref DynamoDBProvisionedTableName, 'gsi1'] ]
+            Period: 60 
+            Stat: 'SampleCount'
+            Unit: 'Count'
+          ReturnData: False
+        - Id: 'm2'
+          MetricStat:
+            Metric:
+              Namespace: 'AWS/DynamoDB'
+              MetricName: 'ConsumedReadCapacityUnits'
+              Dimensions:
+                - Name: 'TableName'
+                  Value: !Ref DynamoDBProvisionedTableName
+                - Name: 'GlobalSecondaryIndexName'
+                  Value: !Join [ '-', [!Ref DynamoDBProvisionedTableName, 'gsi1'] ]
+            Period: 60 
+            Stat: 'SampleCount'
+            Unit: 'Count'
+          ReturnData: False
+        - Id: 'm3'
+          MetricStat:
+            Metric:
+              Namespace: 'AWS/DynamoDB'
+              MetricName: 'ConsumedWriteCapacityUnits'
+              Dimensions:
+                - Name: 'TableName'
+                  Value: !Ref DynamoDBProvisionedTableName
+                - Name: 'GlobalSecondaryIndexName'
+                  Value: !Join [ '-', [!Ref DynamoDBProvisionedTableName, 'gsi1'] ]
+            Period: 60 
+            Stat: 'SampleCount'
+            Unit: 'Count'
+          ReturnData: False
+      EvaluationPeriods: 20
+      Threshold: 2.0
+      ComparisonOperator: 'GreaterThanThreshold'
+  DynamoDBTableUserErrorAlarm:
+    Type: 'AWS::CloudWatch::Alarm'
+    Properties:
+      AlarmName: 'DynamoDBTableUserErrorAlarm'
+      AlarmDescription: 'Alarm when user errors exceed 2% of total number of requests'
+      AlarmActions:
+        - !Ref DynamoDBMonitoringSNSTopic
+      Metrics:
+        - Id: 'e1'
+          Expression: 'm1/(m2+m3)'
+          Label: UserErrorsOverTotalRequests
+        - Id: 'm1'
+          MetricStat:
+            Metric:
+              Namespace: 'AWS/DynamoDB'
+              MetricName: 'UserErrors'
+              Dimensions:
+                - Name: 'TableName'
+                  Value: !Ref DynamoDBProvisionedTableName
+            Period: 60 
+            Stat: 'SampleCount'
+            Unit: 'Count'
+          ReturnData: False
+        - Id: 'm2'
+          MetricStat:
+            Metric:
+              Namespace: 'AWS/DynamoDB'
+              MetricName: 'ConsumedReadCapacityUnits'
+              Dimensions:
+                - Name: 'TableName'
+                  Value: !Ref DynamoDBProvisionedTableName
+            Period: 60 
+            Stat: 'SampleCount'
+            Unit: 'Count'
+          ReturnData: False
+        - Id: 'm3'
+          MetricStat:
+            Metric:
+              Namespace: 'AWS/DynamoDB'
+              MetricName: 'ConsumedWriteCapacityUnits'
+              Dimensions:
+                - Name: 'TableName'
+                  Value: !Ref DynamoDBProvisionedTableName
+            Period: 60 
+            Stat: 'SampleCount'
+            Unit: 'Count'
+          ReturnData: False
+      EvaluationPeriods: 2
+      Threshold: 2.0
+      ComparisonOperator: 'GreaterThanThreshold'
+  DynamoDBGSIUserErrorAlarm:
+    Type: 'AWS::CloudWatch::Alarm'
+    Properties:
+      AlarmName: 'DynamoDBGSIUserErrorAlarm'
+      AlarmDescription: 'Alarm when GSI user errors exceed 2% of total number of requests'
+      AlarmActions:
+        - !Ref DynamoDBMonitoringSNSTopic
+      Metrics:
+        - Id: 'e1'
+          Expression: 'm1/(m2+m3)'
+          Label: GSIUserErrorsOverTotalRequests
+        - Id: 'm1'
+          MetricStat:
+            Metric:
+              Namespace: 'AWS/DynamoDB'
+              MetricName: 'UserErrors'
+              Dimensions:
+                - Name: 'TableName'
+                  Value: !Ref DynamoDBProvisionedTableName
+                - Name: 'GlobalSecondaryIndexName'
+                  Value: !Join [ '-', [!Ref DynamoDBProvisionedTableName, 'gsi1'] ]
+            Period: 60 
+            Stat: 'SampleCount'
+            Unit: 'Count'
+          ReturnData: False
+        - Id: 'm2'
+          MetricStat:
+            Metric:
+              Namespace: 'AWS/DynamoDB'
+              MetricName: 'ConsumedReadCapacityUnits'
+              Dimensions:
+                - Name: 'TableName'
+                  Value: !Ref DynamoDBProvisionedTableName
+                - Name: 'GlobalSecondaryIndexName'
+                  Value: !Join [ '-', [!Ref DynamoDBProvisionedTableName, 'gsi1'] ]
+            Period: 60 
+            Stat: 'SampleCount'
+            Unit: 'Count'
+          ReturnData: False
+        - Id: 'm3'
+          MetricStat:
+            Metric:
+              Namespace: 'AWS/DynamoDB'
+              MetricName: 'ConsumedWriteCapacityUnits'
+              Dimensions:
+                - Name: 'TableName'
+                  Value: !Ref DynamoDBProvisionedTableName
+                - Name: 'GlobalSecondaryIndexName'
+                  Value: !Join [ '-', [!Ref DynamoDBProvisionedTableName, 'gsi1'] ]
+            Period: 60 
+            Stat: 'SampleCount'
+            Unit: 'Count'
+          ReturnData: False
+      EvaluationPeriods: 2
+      Threshold: 2.0
+      ComparisonOperator: 'GreaterThanThreshold'
+  DynamoDBTableConditionCheckAlarm:
+    Type: 'AWS::CloudWatch::Alarm'
+    Properties:
+      AlarmName: 'DynamoDBTableConditionCheckWritelarm'
+      AlarmDescription: 'Alarm when condition check errors are too high'
+      AlarmActions:
+        - !Ref DynamoDBMonitoringSNSTopic
+      Namespace: 'AWS/DynamoDB'
+      MetricName: 'ConditionalCheckFailedRequests'
+      Statistic: 'Sum'
+      Unit: 'Count'
+      Threshold: 100
+      ComparisonOperator: 'GreaterThanThreshold'
+      Period: 60
+      EvaluationPeriods: 2
+  DynamoDBTableTransactionConflictAlarm:
+    Type: 'AWS::CloudWatch::Alarm'
+    Properties:
+      AlarmName: 'DynamoDBTableTransactionConflictAlarm'
+      AlarmDescription: 'Alarm when transaction conflict errors are too high'
+      AlarmActions:
+        - !Ref DynamoDBMonitoringSNSTopic
+      Namespace: 'AWS/DynamoDB'
+      MetricName: 'TransactionConflict'
+      Statistic: 'Sum'
+      Unit: 'Count'
+      Threshold: 100
+      ComparisonOperator: 'GreaterThanThreshold'
+      Period: 60
+      EvaluationPeriods: 2
+  DynamoDBTableASReadAlarm:
+    Type: 'AWS::CloudWatch::Alarm'
+    Properties:
+      AlarmName: 'DynamoDBTableASReadAlarm'
+      AlarmDescription: 'Alarm when table auto scaling read setting approaches table AS maximum'
+      AlarmActions:
+        - !Ref DynamoDBMonitoringSNSTopic
+      Namespace: !Ref DynamoDBCustomNamespace
+      MetricName: 'ProvisionedReadCapacityAutoScalingPct'
+      Dimensions:
+        - Name: 'TableName'
+          Value: !Ref DynamoDBProvisionedTableName
+      Statistic: 'Maximum'
+      Unit: 'Percent'
+      Threshold: 90
+      ComparisonOperator: 'GreaterThanThreshold'
+      Period: 60
+      EvaluationPeriods: 2
+  DynamoDBTableASWriteAlarm:
+    Type: 'AWS::CloudWatch::Alarm'
+    Properties:
+      AlarmName: 'DynamoDBTableASWriteAlarm'
+      AlarmDescription: 'Alarm when table auto scaling write setting approaches table AS maximum'
+      AlarmActions:
+        - !Ref DynamoDBMonitoringSNSTopic
+      Namespace: !Ref DynamoDBCustomNamespace
+      MetricName: 'ProvisionedWriteCapacityAutoScalingPct'
+      Dimensions:
+        - Name: 'TableName'
+          Value: !Ref DynamoDBProvisionedTableName
+      Statistic: 'Maximum'
+      Unit: 'Percent'
+      Threshold: 90
+      ComparisonOperator: 'GreaterThanThreshold'
+      Period: 60
+      EvaluationPeriods: 2
+
+# Alarms for OnDemand Tables
+  DynamoDBOnDemandTableReadLimitAlarm:
+    Type: 'AWS::CloudWatch::Alarm'
+    Properties:
+      AlarmName: 'DynamoDBOnDemandTableReadLimitAlarm'
+      AlarmDescription: 'Alarm when consumed table reads approach the account limit'
+      AlarmActions:
+        - !Ref DynamoDBMonitoringSNSTopic
+      Metrics:
+        - Id: 'e1'
+          Expression: '(((m1 / 300) / m2) * 100)'
+          Label: TableReadsOverMaxReadLimit
+        - Id: 'm1'
+          MetricStat:
+            Metric:
+              Namespace: 'AWS/DynamoDB'
+              MetricName: 'ConsumedReadCapacityUnits'
+              Dimensions:
+                - Name: 'TableName'
+                  Value: !Ref DynamoDBOnDemandTableName
+            Period: 300 
+            Stat: 'SampleCount'
+            Unit: 'Count'
+          ReturnData: False
+        - Id: 'm2'
+          MetricStat:
+            Metric:
+              Namespace: 'AWS/DynamoDB'
+              MetricName: 'AccountMaxTableLevelReads'
+            Period: 300 
+            Stat: 'Maximum'
+          ReturnData: False
+      EvaluationPeriods: 2
+      Threshold: 90
+      ComparisonOperator: 'GreaterThanThreshold'
+
+  DynamoDBOnDemandTableWriteLimitAlarm:
+    Type: 'AWS::CloudWatch::Alarm'
+    Properties:
+      AlarmName: 'DynamoDBOnDemandTableWriteLimitAlarm'
+      AlarmDescription: 'Alarm when consumed table reads approach the account limit'
+      AlarmActions:
+        - !Ref DynamoDBMonitoringSNSTopic
+      Metrics:
+        - Id: 'e1'
+          Expression: '(((m1 / 300) / m2) * 100)'
+          Label: TableWritesOverMaxWriteLimit
+        - Id: 'm1'
+          MetricStat:
+            Metric:
+              Namespace: 'AWS/DynamoDB'
+              MetricName: 'ConsumedWriteCapacityUnits'
+              Dimensions:
+                - Name: 'TableName'
+                  Value: !Ref DynamoDBOnDemandTableName
+            Period: 300 
+            Stat: 'SampleCount'
+            Unit: 'Count'
+          ReturnData: False
+        - Id: 'm2'
+          MetricStat:
+            Metric:
+              Namespace: 'AWS/DynamoDB'
+              MetricName: 'AccountMaxTableLevelWrites'
+            Period: 300 
+            Stat: 'Maximum'
+          ReturnData: False
+      EvaluationPeriods: 2
+      Threshold: 90
+      ComparisonOperator: 'GreaterThanThreshold'
+
+  DynamoDBOnDemandGSIReadLimitAlarm:
+    Type: 'AWS::CloudWatch::Alarm'
+    Properties:
+      AlarmName: 'DynamoDBOnDemandGSIReadLimitAlarm'
+      AlarmDescription: 'Alarm when consumed GSI reads approach the account limit'
+      AlarmActions:
+        - !Ref DynamoDBMonitoringSNSTopic
+      Metrics:
+        - Id: 'e1'
+          Expression: '(((m1 / 300) / m2) * 100)'
+          Label: GSIReadsOverMaxReadLimit
+        - Id: 'm1'
+          MetricStat:
+            Metric:
+              Namespace: 'AWS/DynamoDB'
+              MetricName: 'ConsumedReadCapacityUnits'
+              Dimensions:
+                - Name: 'TableName'
+                  Value: !Ref DynamoDBOnDemandTableName
+                - Name: 'GlobalSecondaryIndexName'
+                  Value: !Join [ '-', [!Ref DynamoDBOnDemandTableName, 'gsi1'] ]
+            Period: 300 
+            Stat: 'SampleCount'
+            Unit: 'Count'
+          ReturnData: False
+        - Id: 'm2'
+          MetricStat:
+            Metric:
+              Namespace: 'AWS/DynamoDB'
+              MetricName: 'AccountMaxTableLevelReads'
+            Period: 300 
+            Stat: 'Maximum'
+          ReturnData: False
+      EvaluationPeriods: 2
+      Threshold: 90
+      ComparisonOperator: 'GreaterThanThreshold'
+
+  DynamoDBOnDemandGSIWriteLimitAlarm:
+    Type: 'AWS::CloudWatch::Alarm'
+    Properties:
+      AlarmName: 'DynamoDBOnDemandGSIWriteLimitAlarm'
+      AlarmDescription: 'Alarm when consumed GSI reads approach the account limit'
+      AlarmActions:
+        - !Ref DynamoDBMonitoringSNSTopic
+      Metrics:
+        - Id: 'e1'
+          Expression: '(((m1 / 300) / m2) * 100)'
+          Label: GSIWritesOverMaxWriteLimit
+        - Id: 'm1'
+          MetricStat:
+            Metric:
+              Namespace: 'AWS/DynamoDB'
+              MetricName: 'ConsumedWriteCapacityUnits'
+              Dimensions:
+                - Name: 'TableName'
+                  Value: !Ref DynamoDBOnDemandTableName
+                - Name: 'GlobalSecondaryIndexName'
+                  Value: !Join [ '-', [!Ref DynamoDBOnDemandTableName, 'gsi1'] ]
+            Period: 300 
+            Stat: 'SampleCount'
+            Unit: 'Count'
+          ReturnData: False
+        - Id: 'm2'
+          MetricStat:
+            Metric:
+              Namespace: 'AWS/DynamoDB'
+              MetricName: 'AccountMaxTableLevelWrites'
+            Period: 300 
+            Stat: 'Maximum'
+          ReturnData: False
+      EvaluationPeriods: 2
+      Threshold: 90
+      ComparisonOperator: 'GreaterThanThreshold'
+
+# Alarms for Global Tables
+  DynamoDBGTReplLatencyAlarm:
+    Type: 'AWS::CloudWatch::Alarm'
+    Properties:
+      AlarmName: 'DynamoDBGTReplLatencyAlarm'
+      AlarmDescription: 'Alarm when global table replication latency exceeds 3 minutes (180k ms)'
+      AlarmActions:
+        - !Ref DynamoDBMonitoringSNSTopic
+      Namespace: 'AWS/DynamoDB'
+      MetricName: 'ReplicationLatency'
+      Dimensions:
+        - Name: 'TableName'
+          Value: !Ref DynamoDBGlobalTableName
+        - Name: 'ReceivingRegion'
+          Value: !Ref DynamoDBGlobalTableReceivingRegion
+      Statistic: 'Average'
+      Threshold: 180000
+      ComparisonOperator: 'GreaterThanThreshold'
+      Period: 60
+      EvaluationPeriods: 15
+
+# Alarms for Lambda Functions
+  DynamoStreamLambdaIteratorAgeAlarm:
+    Type: 'AWS::CloudWatch::Alarm'
+    Properties:
+      AlarmName: 'DynamoStreamLambdaIteratorAgeAlarm'
+      AlarmDescription: 'Alarm when lambda iterator age exceeds 30 seconds (30k ms)'
+      AlarmActions:
+        - !Ref DynamoDBMonitoringSNSTopic
+      Namespace: 'AWS/Lambda'
+      MetricName: 'IteratorAge'
+      Dimensions:
+        - Name: 'Function'
+          Value: !Ref DynamoDBStreamLambdaFunctionName
+        - Name: 'Resource'
+          Value: !Ref DynamoDBStreamLambdaFunctionName
+      Statistic: 'Average'
+      Threshold: 30000
+      ComparisonOperator: 'GreaterThanThreshold'
+      Period: 60
+      EvaluationPeriods: 2
