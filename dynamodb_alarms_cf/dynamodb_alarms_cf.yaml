@@ -437,7 +437,7 @@ Resources:
         - !Ref DynamoDBMonitoringSNSTopic
       Metrics:
         - Id: 'e1'
-          Expression: 'm1/(m2+m3)'
+          Expression: 'm1/(m2+m3)*100'
           Label: SystemErrorsOverTotalRequests
         - Id: 'm1'
           MetricStat:
@@ -487,7 +487,7 @@ Resources:
         - !Ref DynamoDBMonitoringSNSTopic
       Metrics:
         - Id: 'e1'
-          Expression: 'm1/(m2+m3)'
+          Expression: 'm1/(m2+m3)*100'
           Label: GSISystemErrorsOverTotalRequests
         - Id: 'm1'
           MetricStat:
@@ -543,7 +543,7 @@ Resources:
         - !Ref DynamoDBMonitoringSNSTopic
       Metrics:
         - Id: 'e1'
-          Expression: 'm1/(m2+m3)'
+          Expression: 'm1/(m2+m3)*100'
           Label: UserErrorsOverTotalRequests
         - Id: 'm1'
           MetricStat:
@@ -593,7 +593,7 @@ Resources:
         - !Ref DynamoDBMonitoringSNSTopic
       Metrics:
         - Id: 'e1'
-          Expression: 'm1/(m2+m3)'
+          Expression: 'm1/(m2+m3)*100'
           Label: GSIUserErrorsOverTotalRequests
         - Id: 'm1'
           MetricStat:
