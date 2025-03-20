@@ -543,99 +543,20 @@ Resources:
         - !Ref DynamoDBMonitoringSNSTopic
       Metrics:
         - Id: 'e1'
-          Expression: 'm1/(m2+m3)*100'
+          Expression: 'm1/(q1+m1)*100'
           Label: UserErrorsOverTotalRequests
         - Id: 'm1'
           MetricStat:
             Metric:
               Namespace: 'AWS/DynamoDB'
               MetricName: 'UserErrors'
-              Dimensions:
-                - Name: 'TableName'
-                  Value: !Ref DynamoDBProvisionedTableName
             Period: 60 
             Stat: 'SampleCount'
             Unit: 'Count'
           ReturnData: False
-        - Id: 'm2'
-          MetricStat:
-            Metric:
-              Namespace: 'AWS/DynamoDB'
-              MetricName: 'ConsumedReadCapacityUnits'
-              Dimensions:
-                - Name: 'TableName'
-                  Value: !Ref DynamoDBProvisionedTableName
-            Period: 60 
-            Stat: 'SampleCount'
-            Unit: 'Count'
-          ReturnData: False
-        - Id: 'm3'
-          MetricStat:
-            Metric:
-              Namespace: 'AWS/DynamoDB'
-              MetricName: 'ConsumedWriteCapacityUnits'
-              Dimensions:
-                - Name: 'TableName'
-                  Value: !Ref DynamoDBProvisionedTableName
-            Period: 60 
-            Stat: 'SampleCount'
-            Unit: 'Count'
-          ReturnData: False
-      EvaluationPeriods: 2
-      Threshold: 2.0
-      ComparisonOperator: 'GreaterThanThreshold'
-  DynamoDBGSIUserErrorAlarm:
-    Type: 'AWS::CloudWatch::Alarm'
-    Properties:
-      AlarmName: 'DynamoDBGSIUserErrorAlarm'
-      AlarmDescription: 'Alarm when GSI user errors exceed 2% of total number of requests'
-      AlarmActions:
-        - !Ref DynamoDBMonitoringSNSTopic
-      Metrics:
-        - Id: 'e1'
-          Expression: 'm1/(m2+m3)*100'
-          Label: GSIUserErrorsOverTotalRequests
-        - Id: 'm1'
-          MetricStat:
-            Metric:
-              Namespace: 'AWS/DynamoDB'
-              MetricName: 'UserErrors'
-              Dimensions:
-                - Name: 'TableName'
-                  Value: !Ref DynamoDBProvisionedTableName
-                - Name: 'GlobalSecondaryIndexName'
-                  Value: !Join [ '-', [!Ref DynamoDBProvisionedTableName, 'gsi1'] ]
-            Period: 60 
-            Stat: 'SampleCount'
-            Unit: 'Count'
-          ReturnData: False
-        - Id: 'm2'
-          MetricStat:
-            Metric:
-              Namespace: 'AWS/DynamoDB'
-              MetricName: 'ConsumedReadCapacityUnits'
-              Dimensions:
-                - Name: 'TableName'
-                  Value: !Ref DynamoDBProvisionedTableName
-                - Name: 'GlobalSecondaryIndexName'
-                  Value: !Join [ '-', [!Ref DynamoDBProvisionedTableName, 'gsi1'] ]
-            Period: 60 
-            Stat: 'SampleCount'
-            Unit: 'Count'
-          ReturnData: False
-        - Id: 'm3'
-          MetricStat:
-            Metric:
-              Namespace: 'AWS/DynamoDB'
-              MetricName: 'ConsumedWriteCapacityUnits'
-              Dimensions:
-                - Name: 'TableName'
-                  Value: !Ref DynamoDBProvisionedTableName
-                - Name: 'GlobalSecondaryIndexName'
-                  Value: !Join [ '-', [!Ref DynamoDBProvisionedTableName, 'gsi1'] ]
-            Period: 60 
-            Stat: 'SampleCount'
-            Unit: 'Count'
+        - Id: 'q1'
+          Expression: 'SELECT COUNT(SuccessfulRequestLatency) FROM SCHEMA("AWS/DynamoDB", TableName, Operation)'
+          Period: 60 
           ReturnData: False
       EvaluationPeriods: 2
       Threshold: 2.0
