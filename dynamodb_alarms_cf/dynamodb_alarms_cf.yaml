@@ -428,16 +428,16 @@ Resources:
       EvaluationPeriods: 2
       Threshold: 2.0
       ComparisonOperator: 'GreaterThanThreshold'
-  DynamoDBTableSystemErrorAlarm:
+  DynamoDBTableSystemErrorAlarmForRead:
     Type: 'AWS::CloudWatch::Alarm'
     Properties:
-      AlarmName: 'DynamoDBTableSystemErrorAlarm'
-      AlarmDescription: 'Alarm when system errors exceed 2% of total number of requests'
+      AlarmName: 'DynamoDBTableSystemErrorAlarmForRead'
+      AlarmDescription: 'Alarm when read system errors exceed 2% of total number of requests'
       AlarmActions:
         - !Ref DynamoDBMonitoringSNSTopic
       Metrics:
         - Id: 'e1'
-          Expression: 'm1/(m2+m3)*100'
+          Expression: '(m1+m2+m3+m4)/(m1+m2+m3+m4+n1+n2+n3+n4)*100'
           Label: SystemErrorsOverTotalRequests
         - Id: 'm1'
           MetricStat:
@@ -447,7 +447,9 @@ Resources:
               Dimensions:
                 - Name: 'TableName'
                   Value: !Ref DynamoDBProvisionedTableName
-            Period: 60 
+                - Name: 'Operation'
+                  Value: 'GetItem'
+            Period: 60
             Stat: 'SampleCount'
             Unit: 'Count'
           ReturnData: False
@@ -455,11 +457,13 @@ Resources:
           MetricStat:
             Metric:
               Namespace: 'AWS/DynamoDB'
-              MetricName: 'ConsumedReadCapacityUnits'
+              MetricName: 'SystemErrors'
               Dimensions:
                 - Name: 'TableName'
                   Value: !Ref DynamoDBProvisionedTableName
-            Period: 60 
+                - Name: 'Operation'
+                  Value: 'BatchGetItem'
+            Period: 60
             Stat: 'SampleCount'
             Unit: 'Count'
           ReturnData: False
@@ -467,28 +471,96 @@ Resources:
           MetricStat:
             Metric:
               Namespace: 'AWS/DynamoDB'
-              MetricName: 'ConsumedWriteCapacityUnits'
+              MetricName: 'SystemErrors'
               Dimensions:
                 - Name: 'TableName'
                   Value: !Ref DynamoDBProvisionedTableName
-            Period: 60 
+                - Name: 'Operation'
+                  Value: 'Scan'
+            Period: 60
             Stat: 'SampleCount'
             Unit: 'Count'
           ReturnData: False
-      EvaluationPeriods: 20
+        - Id: 'm4'
+          MetricStat:
+            Metric:
+              Namespace: 'AWS/DynamoDB'
+              MetricName: 'SystemErrors'
+              Dimensions:
+                - Name: 'TableName'
+                  Value: !Ref DynamoDBProvisionedTableName
+                - Name: 'Operation'
+                  Value: 'Query'
+            Period: 60
+            Stat: 'SampleCount'
+            Unit: 'Count'
+          ReturnData: False
+        - Id: 'n1'
+          MetricStat:
+            Metric:
+              Namespace: 'AWS/DynamoDB'
+              MetricName: 'SuccessfulRequestLatency'
+              Dimensions:
+                - Name: 'TableName'
+                  Value: !Ref DynamoDBProvisionedTableName
+                - Name: 'Operation'
+                  Value: 'GetItem'
+            Period: 60
+            Stat: 'SampleCount'
+          ReturnData: False
+        - Id: 'n2'
+          MetricStat:
+            Metric:
+              Namespace: 'AWS/DynamoDB'
+              MetricName: 'SuccessfulRequestLatency'
+              Dimensions:
+                - Name: 'TableName'
+                  Value: !Ref DynamoDBProvisionedTableName
+                - Name: 'Operation'
+                  Value: 'BatchGetItem'
+            Period: 60
+            Stat: 'SampleCount'
+          ReturnData: False
+        - Id: 'n3'
+          MetricStat:
+            Metric:
+              Namespace: 'AWS/DynamoDB'
+              MetricName: 'SuccessfulRequestLatency'
+              Dimensions:
+                - Name: 'TableName'
+                  Value: !Ref DynamoDBProvisionedTableName
+                - Name: 'Operation'
+                  Value: 'Scan'
+            Period: 60
+            Stat: 'SampleCount'
+          ReturnData: False
+        - Id: 'n4'
+          MetricStat:
+            Metric:
+              Namespace: 'AWS/DynamoDB'
+              MetricName: 'SuccessfulRequestLatency'
+              Dimensions:
+                - Name: 'TableName'
+                  Value: !Ref DynamoDBProvisionedTableName
+                - Name: 'Operation'
+                  Value: 'Query'
+            Period: 60
+            Stat: 'SampleCount'
+          ReturnData: False
+      EvaluationPeriods: 2
       Threshold: 2.0
       ComparisonOperator: 'GreaterThanThreshold'
-  DynamoDBGSISystemErrorAlarm:
+  DynamoDBTableSystemErrorAlarmForWrite:
     Type: 'AWS::CloudWatch::Alarm'
     Properties:
-      AlarmName: 'DynamoDBGSISystemErrorAlarm'
-      AlarmDescription: 'Alarm when GSI system errors exceed 2% of total number of requests'
+      AlarmName: 'DynamoDBTableSystemErrorAlarmForWrite'
+      AlarmDescription: 'Alarm when write system errors exceed 2% of total number of requests'
       AlarmActions:
         - !Ref DynamoDBMonitoringSNSTopic
       Metrics:
         - Id: 'e1'
-          Expression: 'm1/(m2+m3)*100'
-          Label: GSISystemErrorsOverTotalRequests
+          Expression: '(m1+m2+m3+m4)/(m1+m2+m3+m4+n1+n2+n3+n4)*100'
+          Label: SystemErrorsOverTotalRequests
         - Id: 'm1'
           MetricStat:
             Metric:
@@ -497,9 +569,9 @@ Resources:
               Dimensions:
                 - Name: 'TableName'
                   Value: !Ref DynamoDBProvisionedTableName
-                - Name: 'GlobalSecondaryIndexName'
-                  Value: !Join [ '-', [!Ref DynamoDBProvisionedTableName, 'gsi1'] ]
-            Period: 60 
+                - Name: 'Operation'
+                  Value: 'PutItem'
+            Period: 60
             Stat: 'SampleCount'
             Unit: 'Count'
           ReturnData: False
@@ -507,13 +579,13 @@ Resources:
           MetricStat:
             Metric:
               Namespace: 'AWS/DynamoDB'
-              MetricName: 'ConsumedReadCapacityUnits'
+              MetricName: 'SystemErrors'
               Dimensions:
                 - Name: 'TableName'
                   Value: !Ref DynamoDBProvisionedTableName
-                - Name: 'GlobalSecondaryIndexName'
-                  Value: !Join [ '-', [!Ref DynamoDBProvisionedTableName, 'gsi1'] ]
-            Period: 60 
+                - Name: 'Operation'
+                  Value: 'DeleteItem'
+            Period: 60
             Stat: 'SampleCount'
             Unit: 'Count'
           ReturnData: False
@@ -521,17 +593,246 @@ Resources:
           MetricStat:
             Metric:
               Namespace: 'AWS/DynamoDB'
-              MetricName: 'ConsumedWriteCapacityUnits'
+              MetricName: 'SystemErrors'
               Dimensions:
                 - Name: 'TableName'
                   Value: !Ref DynamoDBProvisionedTableName
-                - Name: 'GlobalSecondaryIndexName'
-                  Value: !Join [ '-', [!Ref DynamoDBProvisionedTableName, 'gsi1'] ]
-            Period: 60 
+                - Name: 'Operation'
+                  Value: 'UpdateItem'
+            Period: 60
             Stat: 'SampleCount'
             Unit: 'Count'
           ReturnData: False
-      EvaluationPeriods: 20
+        - Id: 'm4'
+          MetricStat:
+            Metric:
+              Namespace: 'AWS/DynamoDB'
+              MetricName: 'SystemErrors'
+              Dimensions:
+                - Name: 'TableName'
+                  Value: !Ref DynamoDBProvisionedTableName
+                - Name: 'Operation'
+                  Value: 'BatchWriteItem'
+            Period: 60
+            Stat: 'SampleCount'
+            Unit: 'Count'
+          ReturnData: False
+        - Id: 'n1'
+          MetricStat:
+            Metric:
+              Namespace: 'AWS/DynamoDB'
+              MetricName: 'SuccessfulRequestLatency'
+              Dimensions:
+                - Name: 'TableName'
+                  Value: !Ref DynamoDBProvisionedTableName
+                - Name: 'Operation'
+                  Value: 'PutItem'
+            Period: 60
+            Stat: 'SampleCount'
+          ReturnData: False
+        - Id: 'n2'
+          MetricStat:
+            Metric:
+              Namespace: 'AWS/DynamoDB'
+              MetricName: 'SuccessfulRequestLatency'
+              Dimensions:
+                - Name: 'TableName'
+                  Value: !Ref DynamoDBProvisionedTableName
+                - Name: 'Operation'
+                  Value: 'DeleteItem'
+            Period: 60
+            Stat: 'SampleCount'
+          ReturnData: False
+        - Id: 'n3'
+          MetricStat:
+            Metric:
+              Namespace: 'AWS/DynamoDB'
+              MetricName: 'SuccessfulRequestLatency'
+              Dimensions:
+                - Name: 'TableName'
+                  Value: !Ref DynamoDBProvisionedTableName
+                - Name: 'Operation'
+                  Value: 'UpdateItem'
+            Period: 60
+            Stat: 'SampleCount'
+          ReturnData: False
+        - Id: 'n4'
+          MetricStat:
+            Metric:
+              Namespace: 'AWS/DynamoDB'
+              MetricName: 'SuccessfulRequestLatency'
+              Dimensions:
+                - Name: 'TableName'
+                  Value: !Ref DynamoDBProvisionedTableName
+                - Name: 'Operation'
+                  Value: 'BatchWriteItem'
+            Period: 60
+            Stat: 'SampleCount'
+          ReturnData: False
+      EvaluationPeriods: 2
+      Threshold: 2.0
+      ComparisonOperator: 'GreaterThanThreshold'
+  DynamoDBTableSystemErrorAlarmForTransact:
+    Type: 'AWS::CloudWatch::Alarm'
+    Properties:
+      AlarmName: 'DynamoDBTableSystemErrorAlarmForTransact'
+      AlarmDescription: 'Alarm when transact system errors exceed 2% of total number of requests'
+      AlarmActions:
+        - !Ref DynamoDBMonitoringSNSTopic
+      Metrics:
+        - Id: 'e1'
+          Expression: '(m1+m2)/(m1+m2+n1+n2)*100'
+          Label: SystemErrorsOverTotalRequests
+        - Id: 'm1'
+          MetricStat:
+            Metric:
+              Namespace: 'AWS/DynamoDB'
+              MetricName: 'SystemErrors'
+              Dimensions:
+                - Name: 'TableName'
+                  Value: !Ref DynamoDBProvisionedTableName
+                - Name: 'Operation'
+                  Value: 'TransactWriteItems'
+            Period: 60
+            Stat: 'SampleCount'
+            Unit: 'Count'
+          ReturnData: False
+        - Id: 'm2'
+          MetricStat:
+            Metric:
+              Namespace: 'AWS/DynamoDB'
+              MetricName: 'SystemErrors'
+              Dimensions:
+                - Name: 'TableName'
+                  Value: !Ref DynamoDBProvisionedTableName
+                - Name: 'Operation'
+                  Value: 'TransactGetItems'
+            Period: 60
+            Stat: 'SampleCount'
+            Unit: 'Count'
+          ReturnData: False
+        - Id: 'n1'
+          MetricStat:
+            Metric:
+              Namespace: 'AWS/DynamoDB'
+              MetricName: 'SuccessfulRequestLatency'
+              Dimensions:
+                - Name: 'TableName'
+                  Value: !Ref DynamoDBProvisionedTableName
+                - Name: 'Operation'
+                  Value: 'TransactWriteItems'
+            Period: 60
+            Stat: 'SampleCount'
+          ReturnData: False
+        - Id: 'n2'
+          MetricStat:
+            Metric:
+              Namespace: 'AWS/DynamoDB'
+              MetricName: 'SuccessfulRequestLatency'
+              Dimensions:
+                - Name: 'TableName'
+                  Value: !Ref DynamoDBProvisionedTableName
+                - Name: 'Operation'
+                  Value: 'TransactGetItems'
+            Period: 60
+            Stat: 'SampleCount'
+          ReturnData: False
+      EvaluationPeriods: 2
+      Threshold: 2.0
+      ComparisonOperator: 'GreaterThanThreshold'
+  DynamoDBTableSystemErrorAlarmForPartiQL:
+    Type: 'AWS::CloudWatch::Alarm'
+    Properties:
+      AlarmName: 'DynamoDBTableSystemErrorAlarmForPartiQL'
+      AlarmDescription: 'Alarm when PartiQL system errors exceed 2% of total number of requests'
+      AlarmActions:
+        - !Ref DynamoDBMonitoringSNSTopic
+      Metrics:
+        - Id: 'e1'
+          Expression: '(m1+m2+m3)/(m1+m2+m3+n1+n2+n3)*100'
+          Label: SystemErrorsOverTotalRequests
+        - Id: 'm1'
+          MetricStat:
+            Metric:
+              Namespace: 'AWS/DynamoDB'
+              MetricName: 'SystemErrors'
+              Dimensions:
+                - Name: 'TableName'
+                  Value: !Ref DynamoDBProvisionedTableName
+                - Name: 'Operation'
+                  Value: 'ExecuteTransaction'
+            Period: 60
+            Stat: 'SampleCount'
+            Unit: 'Count'
+          ReturnData: False
+        - Id: 'm2'
+          MetricStat:
+            Metric:
+              Namespace: 'AWS/DynamoDB'
+              MetricName: 'SystemErrors'
+              Dimensions:
+                - Name: 'TableName'
+                  Value: !Ref DynamoDBProvisionedTableName
+                - Name: 'Operation'
+                  Value: 'BatchExecuteStatement'
+            Period: 60
+            Stat: 'SampleCount'
+            Unit: 'Count'
+          ReturnData: False
+        - Id: 'm3'
+          MetricStat:
+            Metric:
+              Namespace: 'AWS/DynamoDB'
+              MetricName: 'SystemErrors'
+              Dimensions:
+                - Name: 'TableName'
+                  Value: !Ref DynamoDBProvisionedTableName
+                - Name: 'Operation'
+                  Value: 'ExecuteStatement'
+            Period: 60
+            Stat: 'SampleCount'
+            Unit: 'Count'
+          ReturnData: False
+        - Id: 'n1'
+          MetricStat:
+            Metric:
+              Namespace: 'AWS/DynamoDB'
+              MetricName: 'SuccessfulRequestLatency'
+              Dimensions:
+                - Name: 'TableName'
+                  Value: !Ref DynamoDBProvisionedTableName
+                - Name: 'Operation'
+                  Value: 'ExecuteTransaction'
+            Period: 60
+            Stat: 'SampleCount'
+          ReturnData: False
+        - Id: 'n2'
+          MetricStat:
+            Metric:
+              Namespace: 'AWS/DynamoDB'
+              MetricName: 'SuccessfulRequestLatency'
+              Dimensions:
+                - Name: 'TableName'
+                  Value: !Ref DynamoDBProvisionedTableName
+                - Name: 'Operation'
+                  Value: 'BatchExecuteStatement'
+            Period: 60
+            Stat: 'SampleCount'
+          ReturnData: False
+        - Id: 'n3'
+          MetricStat:
+            Metric:
+              Namespace: 'AWS/DynamoDB'
+              MetricName: 'SuccessfulRequestLatency'
+              Dimensions:
+                - Name: 'TableName'
+                  Value: !Ref DynamoDBProvisionedTableName
+                - Name: 'Operation'
+                  Value: 'ExecuteStatement'
+            Period: 60
+            Stat: 'SampleCount'
+          ReturnData: False
+      EvaluationPeriods: 2
       Threshold: 2.0
       ComparisonOperator: 'GreaterThanThreshold'
   DynamoDBTableUserErrorAlarm:
